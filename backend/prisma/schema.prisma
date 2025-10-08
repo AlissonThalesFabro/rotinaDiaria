@@ -1,24 +1,265 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
-// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
-
+// Configuração do Prisma Client
 generator client {
   provider = "prisma-client-js"
-  output   = "../generated/prisma"
 }
 
+// Configuração do Banco de Dados
+// NOTA: Em produção, trocar para PostgreSQL
 datasource db {
   provider = "sqlite"
-  url      = env("DATABASE_URL")
+  url      = env("DATABASE_URL") // Define no .env: DATABASE_URL="file:../data/app.db"
 }
 
 
+// MODELO: User (Responsáveis/Pais)
+
+/**
+ * Tabela de usuários do sistema (pais/responsáveis)
+ * Cada usuário pode ter múltiplas crianças cadastradas
+ */
 model User {
-  id    Int     @id @default(autoincrement()) 
-  email String  @unique
-  name  String
-
-  @@map("users")
+  id        Int      @id @default(autoincrement())
+  email     String   @unique // Email para login
+  password  String   // Senha hash (usar bcrypt)
+  name      String   // Nome completo do responsável
+  phone     String?  // Telefone (opcional)
+  
+  // Relacionamentos
+  children  Child[]  // Um usuário pode ter várias crianças
+  
+  // Metadados
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  @@map("users") // Nome da tabela no banco
 }
+
+
+// MODELO: Child (Crianças)
+
+/**
+ * Tabela de crianças cadastradas no sistema
+ * 
+ * Cada criança tem sua própria rotina, progresso e moedas
+ */
+model Child {
+  id          Int      @id @default(autoincrement())
+  name        String   // Nome da criança
+  birthDate   DateTime // Data de nascimento
+  avatar      String?  // URL do avatar (opcional)
+  
+  // Sistema de Gamificação
+  coins       Int      @default(0) // Total de moedas acumuladas
+  streak      Int      @default(0) // Dias consecutivos cumprindo rotina
+  level       Int      @default(1) // Nível atual (calculado pelas moedas)
+  
+  // Relacionamentos
+  userId      Int      // Chave estrangeira para User
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  routineSlots RoutineSlot[] // Slots da rotina da criança
+  progress     Progress[]    // Histórico de progresso
+  achievements ChildAchievement[] // Conquistas desbloqueadas
+  
+  // Metadados
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  @@map("children")
+}
+
+
+// MODELO: Activity (Atividades)
+
+/**
+ * Catálogo de atividades disponíveis
+ * 
+ * Atividades pré-cadastradas que podem ser adicionadas às rotinas
+ */
+model Activity {
+  id          Int      @id @default(autoincrement())
+  name        String   // Nome da atividade (ex: "Escovar Dentes")
+  description String?  // Descrição detalhada (opcional)
+  icon        String   // Emoji representando a atividade (ex: "🦷")
+  color       String   // Cor em hexadecimal (ex: "#3B82F6")
+  category    String   // Categoria (Higiene, Alimentação, Educação, Lazer)
+  
+  // Sistema de Recompensas
+  coins       Int      // Moedas que a criança ganha ao completar
+  
+  // Configurações
+  isDefault   Boolean  @default(false) // Se é atividade padrão do sistema
+  estimatedDuration Int? // Duração estimada em minutos (opcional)
+  
+  // Relacionamentos
+  routineSlots RoutineSlot[] // Slots que usam esta atividade
+  
+  // Metadados
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  @@map("activities")
+}
+
+
+// MODELO: RoutineSlot (Slots da Rotina)
+
+/**
+ * Slots individuais da rotina diária
+ * Cada slot representa uma atividade em um horário específico
+ * do dia de uma criança
+ */
+model RoutineSlot {
+  id          Int      @id @default(autoincrement())
+  
+  // Dados do Slot
+  date        DateTime // Data da rotina (YYYY-MM-DD)
+  time        String   // Horário do slot (formato HH:mm, ex: "07:00")
+  completed   Boolean  @default(false) // Se foi completado
+  completedAt DateTime? // Quando foi completado
+  
+  // Relacionamentos
+  childId     Int
+  child       Child    @relation(fields: [childId], references: [id], onDelete: Cascade)
+  
+  activityId  Int
+  activity    Activity @relation(fields: [activityId], references: [id], onDelete: Cascade)
+  
+  // Notas (opcional)
+  notes       String?  // Observações dos pais/criança
+  
+  // Metadados
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  // Índices para performance
+  @@unique([childId, date, time]) // Não pode ter dois slots no mesmo horário
+  @@index([childId, date]) // Busca rápida por data
+  
+  @@map("routine_slots")
+}
+
+
+// MODELO: Progress (Progresso Diário)
+
+/**
+ * Registro de progresso diário de cada criança
+ * 
+ * Armazena estatísticas de cada dia para gráficos e relatórios
+ */
+model Progress {
+  id              Int      @id @default(autoincrement())
+  
+  // Data do Progresso
+  date            DateTime // Data do registro
+  
+  // Estatísticas do Dia
+  tasksTotal      Int      // Total de tarefas do dia
+  tasksCompleted  Int      // Tarefas completadas
+  coinsEarned     Int      @default(0) // Moedas ganhas no dia
+  
+  // Relacionamentos
+  childId         Int
+  child           Child    @relation(fields: [childId], references: [id], onDelete: Cascade)
+  
+  // Metadados
+  createdAt       DateTime @default(now())
+  
+  // Uma entrada por criança por dia
+  @@unique([childId, date])
+  @@index([childId, date])
+  
+  @@map("progress")
+}
+
+
+// MODELO: Achievement (Conquistas)
+
+/**
+ * Conquistas/Medalhas disponíveis no sistema
+ * 
+ * Define as conquistas que as crianças podem desbloquear
+ */
+model Achievement {
+  id          Int      @id @default(autoincrement())
+  name        String   @unique // Nome da conquista
+  description String   // Descrição de como conquistar
+  icon        String   // Emoji da conquista (ex: "🏆")
+  
+  // Condições para Desbloquear
+  condition   String   // Tipo: "coins", "streak", "tasks", "level"
+  threshold   Int      // Valor necessário (ex: 50 moedas, 7 dias)
+  
+  // Relacionamentos
+  children    ChildAchievement[] // Crianças que desbloquearam
+  
+  // Metadados
+  createdAt   DateTime @default(now())
+  
+  @@map("achievements")
+}
+
+
+// MODELO: ChildAchievement (Conquistas da Criança)
+
+/**
+ * Tabela intermediária: Conquistas desbloqueadas por cada criança
+ */
+model ChildAchievement {
+  id            Int         @id @default(autoincrement())
+  
+  // Relacionamentos
+  childId       Int
+  child         Child       @relation(fields: [childId], references: [id], onDelete: Cascade)
+  
+  achievementId Int
+  achievement   Achievement @relation(fields: [achievementId], references: [id], onDelete: Cascade)
+  
+  // Data de Desbloqueio
+  unlockedAt    DateTime    @default(now())
+  
+  // Uma conquista por criança
+  @@unique([childId, achievementId])
+  
+  @@map("child_achievements")
+}
+
+
+// SEEDS (Dados Iniciais)
+
+/**
+ * ATIVIDADES PADRÃO SUGERIDAS:
+ * 
+ * Higiene:
+ * - Escovar Dentes (🦷, 5 moedas)
+ * - Tomar Banho (🚿, 10 moedas)
+ * - Lavar as Mãos (🧼, 3 moedas)
+ * 
+ * Alimentação:
+ * - Café da Manhã (🍳, 10 moedas)
+ * - Almoço (🍽️, 10 moedas)
+ * - Jantar (🍲, 10 moedas)
+ * - Lanche (🍎, 5 moedas)
+ * 
+ * Educação:
+ * - Lição de Casa (✏️, 20 moedas)
+ * - Ler Livro (📚, 15 moedas)
+ * - Estudar (📖, 20 moedas)
+ * 
+ * Lazer:
+ * - Brincar (🎮, 10 moedas)
+ * - Desenhar (🎨, 10 moedas)
+ * - Assistir TV (📺, 5 moedas)
+ * 
+ * Sono:
+ * - Dormir (😴, 10 moedas)
+ * - Soneca (💤, 5 moedas)
+ * 
+ * CONQUISTAS PADRÃO:
+ * - Primeira Tarefa (🌟, 1 tarefa)
+ * - Coletor (💰, 50 moedas)
+ * - Super Coletor (💎, 100 moedas)
+ * - Dedicado (🔥, 7 dias de streak)
+ * - Campeão (🏆, 30 dias de streak)
+ * - Mestre da Rotina (👑, Nível 5)
+ */

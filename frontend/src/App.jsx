@@ -1,34 +1,67 @@
-import { useState } from 'react'
-import reactLogo from './assets/react.svg'
-import viteLogo from '/vite.svg'
+import { useState, useEffect } from 'react'
+import { api } from './services/Api'
 import './App.css'
+import React from 'react';
+import Dashboard from './pages/Dashboard';
 
 function App() {
-  const [count, setCount] = useState(0)
+  return <Dashboard />;
+}
+
+function App() {
+  const [users, setUsers] = useState([])
+  const [name, setName] = useState('')
+
+  // Buscar usuários ao carregar a página
+  useEffect(() => {
+    loadUsers()
+  }, [])
+
+  const loadUsers = async () => {
+    try {
+      const usersData = await api.getUsers()
+      setUsers(usersData)
+    } catch (error) {
+      console.error('Erro ao carregar usuários:', error)
+    }
+  }
+
+  const handleCreateUser = async () => {
+    if (name.trim()) {
+      try {
+        await api.createUser({ name, email: `${name}@email.com` })
+        setName('')
+        loadUsers() // Recarregar a lista
+      } catch (error) {
+        console.error('Erro ao criar usuário:', error)
+      }
+    }
+  }
 
   return (
-    <>
+    <div>
+      <h1>Minha Rotina Diária</h1>
+      
       <div>
-        <a href="https://vite.dev" target="_blank">
-          <img src={viteLogo} className="logo" alt="Vite logo" />
-        </a>
-        <a href="https://react.dev" target="_blank">
-          <img src={reactLogo} className="logo react" alt="React logo" />
-        </a>
+        <h2>Adicionar Usuário</h2>
+        <input 
+          type="text" 
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="Digite o nome"
+        />
+        <button onClick={handleCreateUser}>Criar Usuário</button>
       </div>
-      <h1>Vite + React</h1>
-      <div className="card">
-        <button onClick={() => setCount((count) => count + 1)}>
-          count is {count}
-        </button>
-        <p>
-          Edit <code>src/App.jsx</code> and save to test HMR
-        </p>
+
+      <div>
+        <h2>Usuários Cadastrados</h2>
+        <ul>
+          {users.map(user => (
+            <li key={user.id}>{user.name} - {user.email}</li>
+          ))}
+        </ul>
       </div>
-      <p className="read-the-docs">
-        Click on the Vite and React logos to learn more
-      </p>
-    </>
+    </div>
   )
 }
 
